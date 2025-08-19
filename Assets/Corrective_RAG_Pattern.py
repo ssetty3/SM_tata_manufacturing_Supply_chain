@@ -1,40 +1,118 @@
-from langchain.chat_models import ChatOpenAI
-from langchain.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain, RetrievalQA
-import time
+from langchain.schema import HumanMessage
+from dotenv import load_dotenv
+import os, sys
 
-# Initialize models and retriever
-llm = ChatOpenAI(temperature=0)
-vector_store = FAISS.load_local("faiss_index", embeddings=None)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# 1. Retriever
-retriever = vector_store.as_retriever()
+from src.llm_setup import get_groq_llm
+from src.format_llm_response import pretty_print_result
+from src.embedding_setup import get_azure_embedding_model
+from src.faiss_vectorstore import get_vectorstore
 
-# 2. Retrieval Evaluator (LLM as judge)
-eval_prompt = PromptTemplate(
-    "Score the following documents for relevance to the query on scale of 0-1:\n\n"
-    "Query: {query}\n\nDocuments:\n{docs}\n\nScores:"
+# === Load environment ===
+load_dotenv(override=True)
+
+embeddings = get_azure_embedding_model()
+
+# === Load FAISS index ===
+print("📂 Loading FAISS vectorstore...")
+vectorstore = get_vectorstore()
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+print("✅ Vectorstore loaded successfully.\n")
+
+# === Answering Prompt ===
+answer_prompt = PromptTemplate(
+    input_variables=["question", "context"],
+    template="""
+You are a financial assistant. Use the provided context to answer the user query.
+
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+"""
 )
-evaluator_chain = LLMChain(llm=llm, prompt=eval_prompt)
 
-# 3. Generator chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm, chain_type="stuff", retriever=retriever
+# === Corrective Check Prompt ===
+check_prompt = PromptTemplate(
+    input_variables=["question", "context"],
+    template="""
+You are a helpful assistant. 
+Check if the retrieved context is relevant and sufficient to answer the question.
+
+Question: {question}
+Context: {context}
+
+Answer only "YES" if context is sufficient, otherwise "NO".
+"""
 )
 
-def corrective_rag(query: str, threshold: float = 0.7):
-    docs = retriever.get_relevant_documents(query)
-    scores = evaluator_chain.run(query=query, docs="\n---\n".join([d.page_content[:200] for d in docs]))
-    avg_score = sum(map(float, scores.strip().split())) / len(docs)
 
-    if avg_score < threshold:
-        # Re-retrieve with extended query or fallback to web search
-        query2 = query + " (explain in detail)"
-        docs = retriever.get_relevant_documents(query2)
+def corrective_rag(user_query: str):
+    llm = get_groq_llm()
+    print(f"🔍 User Query: {user_query}")
 
-    return qa_chain({"query": query, "retrieved_documents": docs})
+    # Step 1: Retrieve docs
+    docs = retriever.invoke(user_query)
+    print(f"📑 Retrieved {len(docs)} documents.")
 
+    for i, d in enumerate(docs, 1):
+        print(f"   └─ Doc {i}: {d.metadata.get('file_name','Unknown')} "
+              f"(role={d.metadata.get('role','Unknown')})")
+
+    context = "\n\n".join([d.page_content for d in docs])
+
+    # Step 2: Check relevance
+    print("\n🤖 Checking relevance of retrieved docs...")
+    check_response = llm.invoke([
+        HumanMessage(content=check_prompt.format(
+            question=user_query, context=context
+        ))
+    ]).content.strip()
+
+    print(f"✅ Relevance Check Result: {check_response}")
+
+    # Step 3: If context not sufficient → expand query
+    if check_response.upper() != "YES":
+        print("⚠️ Context insufficient. Expanding query...")
+        expanded_query = f"Provide detailed financial insights about: {user_query}"
+        print(f"🔄 Expanded Query: {expanded_query}")
+
+        docs = retriever.invoke(expanded_query)
+        print(f"📑 Retrieved {len(docs)} documents after expansion.")
+
+        for i, d in enumerate(docs, 1):
+            print(f"   └─ Expanded Doc {i}: {d.metadata.get('file_name','Unknown')} "
+                  f"(role={d.metadata.get('role','Unknown')})")
+
+        context = "\n\n".join([d.page_content for d in docs])
+    else:
+        print("👍 Context is sufficient, proceeding with answer generation.")
+
+    # Step 4: Final Answer
+    print("\n📝 Generating final answer...")
+    formatted_prompt = answer_prompt.format(question=user_query, context=context)
+    response = llm.invoke([HumanMessage(content=formatted_prompt)])
+
+    print("✅ Answer generated successfully.\n")
+    return response.content, docs
+
+
+# === Example Run ===
 if __name__ == "__main__":
-    answer = corrective_rag("What causes allergies?")
-    print(answer["result"])
+    #query = "What risks are mentioned?"
+    #query= "who is the CEO of Deutsche Bank in 2023?"
+    query = "who is the spider man of Deutsche Bank?"
+    answer, docs = corrective_rag(query)
+
+    metadata = [
+        {"file": d.metadata.get("file_name", "Unknown"),
+         "role": d.metadata.get("role", "Unknown")}
+        for d in docs
+    ]
+
+    pretty_print_result(answer, metadata)

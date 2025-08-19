@@ -71,7 +71,7 @@ def embed_and_store(chunks, client):
     embeddings = AzureOpenAIEmbeddings(
         deployment=AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
         model=EMBEDDING_MODEL_NAME,
-        chunk_size=1
+        chunk_size=CHUNK_SIZE
     )
 
     # Create collection if not exists

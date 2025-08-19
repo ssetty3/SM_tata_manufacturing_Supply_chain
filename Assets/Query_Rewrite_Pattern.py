@@ -1,42 +1,98 @@
-from langchain.chat_models import ChatOpenAI
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain, RetrievalQA
+from langchain.schema import HumanMessage
+from dotenv import load_dotenv
 
-# 1. Initialize models and retriever
-llm = ChatOpenAI(temperature=0)
-embed_model = OpenAIEmbeddings()
-vector_store = FAISS.load_local("faiss_index", embed_model)
+import sys, os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# 2. Rewrite chain
+from src.llm_setup import get_groq_llm   # ✅ your Groq LLM wrapper
+from src.format_llm_response import pretty_print_result
+from src.embedding_setup import get_azure_embedding_model
+from src.faiss_vectorstore import get_vectorstore
+
+# load environment variables
+load_dotenv(override=True)
+
+# Load embeddings
+embeddings = get_azure_embedding_model()
+
+# Ensure the vectorstore is loaded
+vectorstore = get_vectorstore()
+
+retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+# === Prompt for rewriting the query ===
+rewrite_template = """
+You are a query rewriting assistant.
+Rewrite the following user query into a more specific and detailed financial analysis query.
+
+Original query:
+{query}
+
+Rewritten query:
+"""
+
 rewrite_prompt = PromptTemplate(
-    "Rewrite the user question to make it clearer and more detailed:\n\n"
-    "User: {query}\n\nRewritten:",
-    input_variables=["query"]
-)
-rewrite_chain = LLMChain(llm=llm, prompt=rewrite_prompt)
-
-# 3. Retrieval QA chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=vector_store.as_retriever(),
-    return_source_documents=True
+    input_variables=["query"],
+    template=rewrite_template
 )
 
-def answer_with_query_rewrite(user_query: str):
-    rewritten = rewrite_chain.run(query=user_query)
-    print("🔄 Rewritten query:", rewritten.strip())
 
-    result = qa_chain({"query": rewritten})
-    answer = result["result"]
-    docs = result["source_documents"]
-    return answer, docs
+# === Main Answering Prompt ===
+template = """
+You are a financial assistant. Use the provided context to answer the user query.
 
-# Usage
+Question:
+{question}
+
+Context:
+{context}
+
+Answer:
+"""
+
+prompt = PromptTemplate(
+    input_variables=["question", "context"],
+    template=template
+)
+
+
+
+def query_rewrite_rag(user_query: str, roles: list[str] = None):
+    llm = get_groq_llm()
+
+    # Step 1: Rewrite query
+    formatted_prompt = rewrite_prompt.format(query=user_query)
+    rewritten_query = llm.invoke([HumanMessage(content=formatted_prompt)]).content
+    print(f"🔄 Rewritten Query: {rewritten_query}\n")
+
+    # Step 2: Apply role filter if given
+    search_kwargs = {"k": 3}
+    if roles:
+        search_kwargs["filter"] = {"role": {"$in": roles}}
+
+    retriever = vectorstore.as_retriever(search_kwargs=search_kwargs)
+
+    # Step 3: Retrieve docs
+    docs = retriever.invoke(rewritten_query)
+    context = "\n\n".join([d.page_content for d in docs])
+
+    # Step 4: Ask final LLM
+    formatted_prompt = prompt.format(question=rewritten_query, context=context)
+    response = llm.invoke([HumanMessage(content=formatted_prompt)])
+
+    return response.content, docs
+
+
 if __name__ == "__main__":
-    ans, ctx = answer_with_query_rewrite("model quality issues")
-    print("Answer:", ans)
-    for doc in ctx:
-        print("•", doc.metadata.get("source"), doc.page_content[:100], "...")
+    query = "DB risk?"
+    answer, docs = query_rewrite_rag(query, roles=["analyst"])
+
+    metadata = [
+        {"file": d.metadata.get("file_name", "Unknown"),
+         "role": d.metadata.get("role", "Unknown")}
+        for d in docs
+    ]
+
+    pretty_print_result(answer, metadata)
+
