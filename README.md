@@ -167,3 +167,33 @@ Critic / Self-Reflection Step (LLM)
 
 
 ```
+
+# 🔹 Chain-of-Thought RAG (a.k.a. Step-by-Step Reasoning RAG)
+
+## 📖 Definition
+
+### Instead of giving an answer directly, the LLM is prompted to reason step by step over the retrieved context.
+### This encourages more structured answers and reduces hallucinations, since the model explicitly shows its reasoning.
+
+## ✅ When to Use
+
+    - When answers require multi-step reasoning (e.g., "compare risks across companies").
+
+    - When you want the LLM’s thought process visible for debugging / transparency.
+
+    - Good for auditing correctness since intermediate reasoning is logged.
+
+```
+User Query
+    │
+    ▼
+Retriever (FAISS / Vector DB)
+    │
+    ▼
+LLM (Reason Step-by-Step with Context)
+    │
+    ▼
+Final Answer (with reasoning trace available)
+
+
+```
