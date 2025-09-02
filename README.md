@@ -197,3 +197,79 @@ Final Answer (with reasoning trace available)
 
 
 ```
+
+# 🔹 RAG Fusion (a.k.a. Multi-Query / Hybrid RAG)
+## 📖 Definition
+
+### Instead of relying on only one query, we generate multiple variations (rewrites, paraphrases, expansions) of the user’s question, retrieve documents for each, and then fuse the results before passing them to the LLM.
+
+### This reduces retrieval bias (when one query misses some docs) and improves recall.
+
+
+# ✅ When to Use
+
+    - When queries are ambiguous or phrased in multiple ways (e.g., "AI market" vs "Artificial Intelligence industry").
+
+    - When you want to increase recall across different synonyms / phrasings.
+
+    - Useful in enterprise search where docs may describe the same concept differently.
+
+
+```
+User Query
+    │
+    ▼
+Query Generator (LLM → N variants)
+    │
+    ▼
+Retriever (for each query)
+    │
+    ▼
+Fused Results (deduplicated + ranked)
+    │
+    ▼
+LLM with final context → Answer
+
+
+```
+
+
+# 🔹 Self-RAG (LLM-guided Retrieval & Reflection)
+## 📖 Definition
+
+### In Self-RAG, the LLM itself decides when and how to retrieve documents. Instead of always retrieving before answering, the LLM dynamically reasons:
+
+### Do I already know the answer?
+
+### Should I call retrieval?
+
+### Is the retrieved context relevant enough?
+
+### If not, should I reformulate the query and retry?
+
+### This adds agentic behavior to RAG, making it smarter and adaptive.
+
+
+# ✅ When to Use
+
+    - When retrieval is expensive (e.g., large vector DB, high latency).
+
+    - When queries are sometimes answerable without external context.
+
+    - When you want the LLM to reflect on whether retrieved docs are trustworthy.
+
+    - For interactive assistants that should avoid hallucination by validating context.
+
+```
+User Query
+    │
+    ▼
+LLM Reasoning ("Do I need retrieval?")
+    ├── No → Answer directly (skip retrieval)
+    └── Yes → Retrieve context
+               │
+               ▼
+      LLM Reflection ("Is context useful?")
+               ├── Yes → Answer with context
+               └── No  → Reformulate query / fallback to web search
+```
