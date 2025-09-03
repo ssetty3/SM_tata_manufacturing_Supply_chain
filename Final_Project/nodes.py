@@ -105,3 +105,20 @@ def summarize_history_node(state: Dict[str, Any]) -> Dict[str, Any]:
         session["history"] = []
         append_trace(state, "summarize", {"summary": resp.content})
     return state
+
+
+from langchain_community.utilities import SerpAPIWrapper
+
+def internet_search_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    search = SerpAPIWrapper()
+    query = state["query"]
+
+    try:
+        results = search.run(query)  # returns a text summary of results
+        state["context"] = results
+        append_trace(state, "internet_search", {"query": query, "results": results[:500]})
+    except Exception as e:
+        state["context"] = ""
+        append_trace(state, "internet_search", {"query": query, "error": str(e)})
+
+    return state

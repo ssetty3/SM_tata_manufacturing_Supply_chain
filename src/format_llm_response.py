@@ -1,35 +1,49 @@
 from rich.console import Console
 from rich.table import Table
 from rich.markdown import Markdown
+from rich.panel import Panel
+from typing import List, Dict, Any
 
 console = Console()
 
-def pretty_print_result(answer: str, metadata: list = None):
+def pretty_print_result(
+    answer: str,
+    metadata: List[Dict[str, Any]] = None,
+    traces: List[Dict[str, Any]] = None
+):
     """
     Pretty print the LLM's result with nice formatting.
-    
-    Parameters:
-    -----------
+
+    Parameters
+    ----------
     answer : str
         The text output from the LLM (can include markdown / tables).
-    metadata : list of dicts
-        Metadata about retrieved docs. Example:
-        [
-            {"file": "DB_Annual_2023.pdf", "role": "analyst"},
-            {"file": "🌐 WebResult-1", "role": "web"},
-            {"file": "🌐 WebResult-2", "role": "error"}
-        ]
+    metadata : list of dicts, optional
+        Metadata about retrieved docs.
+        Example:
+            [
+                {"file": "DB_Annual_2023.pdf", "role": "analyst"},
+                {"file": "🌐 WebResult-1", "role": "web"},
+                {"file": "🌐 WebResult-2", "role": "error"}
+            ]
+    traces : list of dicts, optional
+        Workflow trace logs.
+        Example:
+            [
+                {"step": "cache_check", "details": {"hit": False}},
+                {"step": "retrieve", "details": {"num_docs": 3}}
+            ]
     """
 
+    # --- Answer ---
     console.rule("[bold blue]💡 LLM Answer[/bold blue]")
 
-    # If output contains markdown (tables, bold, etc.), render it
-    if "|" in answer and "---" in answer:
+    if "|" in answer and "---" in answer:  # looks like Markdown table
         console.print(Markdown(answer))
     else:
         console.print(answer, style="green")
 
-    # Print retrieved document metadata in a separate table
+    # --- Metadata ---
     if metadata:
         console.rule("[bold green]📄 Retrieved Docs Metadata[/bold green]")
 
@@ -41,7 +55,6 @@ def pretty_print_result(answer: str, metadata: list = None):
             source = m.get("file", "N/A")
             role = m.get("role", "N/A")
 
-            # Highlight based on role
             if role.lower() == "web":
                 table.add_row(f"[yellow]{source}[/yellow]", f"[yellow]{role}[/yellow]")
             elif "error" in role.lower():
@@ -50,6 +63,28 @@ def pretty_print_result(answer: str, metadata: list = None):
                 table.add_row(source, role)
 
         console.print(table)
+
+    # --- Traces ---
+    if traces:
+        console.rule("[bold purple]🧭 Execution Trace[/bold purple]")
+
+        trace_table = Table(show_header=True, header_style="bold magenta")
+        trace_table.add_column("Step", style="cyan", no_wrap=True)
+        trace_table.add_column("Details", style="white")
+
+        for t in traces:
+            step = t.get("step", "N/A")
+            details = t.get("details", {})
+
+            # Format details dictionary into nice key=value pairs
+            if isinstance(details, dict):
+                detail_str = "\n".join([f"[green]{k}[/green]: {v}" for k, v in details.items()])
+            else:
+                detail_str = str(details)
+
+            trace_table.add_row(step, detail_str)
+
+        console.print(trace_table)
 
 
 # === Example usage ===

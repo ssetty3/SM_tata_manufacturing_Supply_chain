@@ -1,5 +1,6 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from dataclasses import dataclass
+from langchain_core.documents import Document
 
 # === In-memory cache ===
 CACHE_STORE: Dict[str, str] = {}
@@ -32,22 +33,17 @@ def get_session(user_id: str, session_id: str) -> Dict[str, Any]:
     return SESSIONS[key]
 
 
-def initial_state(user_id: str, session_id: str, role: str, query: str, vectorstore) -> Dict[str, Any]:
+def initial_state(user_id: str, session_id: str, role: str, query: str, vectorstore: Any) -> Dict[str, Any]:
     """
-    Initializes the state dictionary passed through LangGraph.
+    Initialize the full state for a given query run.
     """
-    session = get_session(user_id, session_id)
     return {
-        "user_id": user_id,
-        "session_id": session_id,
-        "role": role,
         "query": query,
-        "vectorstore": vectorstore,
+        "role": role,
+        "session": get_session(user_id, session_id),  # <-- unified session logic
         "docs": [],
-        "context": "",
-        "answer": "",
         "trace": [],
-        "session": session,
+        "vectorstore": vectorstore,   # Required for retrieval
     }
 
 
@@ -58,26 +54,27 @@ def append_trace(state: Dict[str, Any], step: str, details: Dict[str, Any]):
     state["trace"].append({"step": step, "details": details})
 
 
-def role_filtered_retriever(vectorstore, role: str, k: int):
+def role_filtered_retriever(vectorstore: Any, role: str, k: int):
     """
     Wraps FAISS retriever to filter documents by role metadata.
     """
 
     class RoleRetriever:
-        def __init__(self, retriever, role):
+        def __init__(self, retriever, role: str):
             self.retriever = retriever
             self.role = role
 
-        def invoke(self, query: str):
+        def invoke(self, query: str) -> List[Document]:
             docs = self.retriever.invoke(query)
             return [d for d in docs if d.metadata.get("role") == self.role]
+
+        __call__ = invoke  # alias for compatibility if called directly
 
     base_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
     return RoleRetriever(base_retriever, role)
 
 
-
-def trim_context(docs_content: list, max_chars: int) -> str:
+def trim_context(docs_content: List[str], max_chars: int) -> str:
     """
     Joins and trims document contents into a bounded context.
     """
