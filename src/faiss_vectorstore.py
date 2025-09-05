@@ -12,7 +12,7 @@ def get_vectorstore():
     embeddings = get_azure_embedding_model()
 
     # === Load FAISS index ===
-    faiss_path = "faiss_index_financial"
+    faiss_path = r"C:\Users\smm931389\Desktop\RAG_patterns\faiss_index_financial"
     vectorstore = FAISS.load_local(
         faiss_path,
         embeddings=embeddings,  # not required for searching
