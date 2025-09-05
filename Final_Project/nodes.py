@@ -87,13 +87,72 @@ def chitchat_node(state: Dict[str, Any]) -> Dict[str, Any]:
         CACHE_STORE[query] = resp.content
     return state
 
+# def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
+#     retriever = role_filtered_retriever(state["vectorstore"], state["role"], CONFIG.retriever_k)
+#     docs = retriever.invoke(state["query"])
+#     state["docs"] = docs
+#     state["context"] = trim_context([d.page_content for d in docs], CONFIG.max_context_docs_chars)
+#     append_trace(state, "retrieve", {"num_docs": len(docs)})
+#     return state
+
+
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
     retriever = role_filtered_retriever(state["vectorstore"], state["role"], CONFIG.retriever_k)
     docs = retriever.invoke(state["query"])
     state["docs"] = docs
-    state["context"] = trim_context([d.page_content for d in docs], CONFIG.max_context_docs_chars)
+
+    context_lines = []
+
+    for doc in docs:
+        lines = doc.page_content.splitlines()
+        table_rows = []
+        header_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            # Count numbers in the line
+            numbers = [w for w in stripped.split() if w.replace(".", "").replace(",", "").isdigit()]
+            
+            if len(numbers) >= 2:
+                # Numeric row: separate columns by |
+                table_rows.append(" | ".join(stripped.split()))
+            else:
+                # Non-numeric line: treat as header if table_rows empty, else as paragraph
+                if table_rows and header_lines:
+                    context_lines.append("\n".join(header_lines))
+                    header_lines = []
+                header_lines.append(stripped)
+
+        # Append table if exists
+        if table_rows:
+            if header_lines:
+                # Markdown header for table
+                header = table_rows[0]
+                separator = " | ".join(["---"] * len(header.split("|")))
+                context_lines.append(f"| {header} |")
+                context_lines.append(f"| {separator} |")
+                context_lines.extend([f"| {row} |" for row in table_rows[1:]])
+            else:
+                context_lines.extend(table_rows)
+        # Append leftover headers/text
+        context_lines.extend(header_lines)
+
+    # Limit to max context length
+    state["context"] = "\n".join(context_lines)[:CONFIG.max_context_docs_chars]
     append_trace(state, "retrieve", {"num_docs": len(docs)})
+
+    # Debug print
+    #print("=== Retrieved Context (processed) ===")
+    #print(state["context"][:500])
+    #print("===================================")
+
     return state
+
+
+
 
 
 def relevance_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,46 +173,84 @@ def relevance_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def answer_node_stream(state: Dict[str, Any]):
-    """Stream answer tokens incrementally into state['answer']."""    
+# def answer_node_stream(state: Dict[str, Any]):
+#     """Stream answer tokens incrementally into state['answer']."""    
+#     llm = get_groq_llm()
+
+#     prompt = f"""
+#     You are a helpful financial assistant for role: {state['role']}.
+#     Use the provided context to answer clearly.
+
+#     Question:
+#     {state['query']}
+
+#     Context:
+#     {state.get('context', '')}
+
+#     Answer:
+#     """
+
+#     chunks = []
+#     for chunk in llm.stream([HumanMessage(content=prompt)]):
+#         delta = chunk.content or ""
+#         if delta:
+#             chunks.append(delta)
+#             partial_answer = "".join(chunks)
+
+#             # Yield a partial state update (LangGraph expects dicts with updates)
+#             yield {
+#                 "answer": partial_answer,
+#                 "trace": [
+#                     {"step": "answer_stream", "details": {"token": delta}}
+#                 ]
+#             }
+
+#     # Finalize
+#     final_answer = "".join(chunks)
+#     state["answer"] = final_answer
+#     append_trace(state, "answer", {"answer": final_answer})
+#     CACHE_STORE[state["query"]] = final_answer
+
+#     # Yield the final completed state
+#     yield {"answer": final_answer}
+
+
+def answer_node_stream(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Generate answer incrementally and store final result in state['answer']."""    
     llm = get_groq_llm()
 
     prompt = f"""
-    You are a helpful financial assistant for role: {state['role']}.
-    Use the provided context to answer clearly.
+You are a helpful financial assistant for role: {state['role']}.
+Use the provided context to answer clearly.
 
-    Question:
-    {state['query']}
+Question:
+{state['query']}
 
-    Context:
-    {state.get('context', '')}
+Context:
+{state.get('context', '')}
 
-    Answer:
-    """
+Answer:
+"""
 
-    chunks = []
+    # Stream tokens to console for live feedback
+    final_answer = ""
     for chunk in llm.stream([HumanMessage(content=prompt)]):
         delta = chunk.content or ""
         if delta:
-            chunks.append(delta)
-            partial_answer = "".join(chunks)
+            final_answer += delta
+            # Print live streaming to terminal
+            print(delta, end="", flush=True)
 
-            # Yield a partial state update (LangGraph expects dicts with updates)
-            yield {
-                "answer": partial_answer,
-                "trace": [
-                    {"step": "answer_stream", "details": {"token": delta}}
-                ]
-            }
-
-    # Finalize
-    final_answer = "".join(chunks)
+    # Save final answer in state
     state["answer"] = final_answer
     append_trace(state, "answer", {"answer": final_answer})
     CACHE_STORE[state["query"]] = final_answer
 
-    # Yield the final completed state
-    yield {"answer": final_answer}
+    # Print newline after streaming
+    print("\n")
+
+    return state
+
 
 
 

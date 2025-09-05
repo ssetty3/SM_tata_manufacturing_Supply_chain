@@ -54,24 +54,41 @@ def append_trace(state: Dict[str, Any], step: str, details: Dict[str, Any]):
     state["trace"].append({"step": step, "details": details})
 
 
-def role_filtered_retriever(vectorstore: Any, role: str, k: int):
+from typing import List, Any
+from langchain.schema import Document
+
+def role_filtered_retriever(vectorstore: Any, roles: List[str] = None, k: int = 3):
     """
-    Wraps FAISS retriever to filter documents by role metadata.
+    Wraps a FAISS vectorstore retriever to filter documents by one or more roles.
+    
+    Args:
+        vectorstore: FAISS vectorstore instance.
+        roles: List of roles to filter by (e.g., ["scientist", "financial"]).
+        k: Number of top documents to retrieve.
+    
+    Returns:
+        A retriever object with an invoke() method that applies role-based filtering.
     """
+    search_kwargs = {"k": k}
+
+    if roles:
+        # FAISS supports $in filter for metadata
+        search_kwargs["filter"] = {"role": {"$in": roles}}
+
+    retriever = vectorstore.as_retriever(search_kwargs=search_kwargs)
 
     class RoleRetriever:
-        def __init__(self, retriever, role: str):
+        def __init__(self, retriever):
             self.retriever = retriever
-            self.role = role
 
         def invoke(self, query: str) -> List[Document]:
-            docs = self.retriever.invoke(query)
-            return [d for d in docs if d.metadata.get("role") == self.role]
+            # Use retriever directly; FAISS applies role filter internally
+            return self.retriever.invoke(query)
 
-        __call__ = invoke  # alias for compatibility if called directly
+        __call__ = invoke  # alias for direct call
 
-    base_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-    return RoleRetriever(base_retriever, role)
+    return RoleRetriever(retriever)
+
 
 
 def trim_context(docs_content: List[str], max_chars: int) -> str:

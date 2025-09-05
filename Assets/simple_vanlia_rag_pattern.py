@@ -125,10 +125,15 @@ def standard_rag(query: str, roles: list[str] = None):
 
 
 if __name__ == "__main__":
-    query = "What are the key financial risks discussed in these reports?"
+    #query = "What are the key financial risks discussed in these reports?"  ## analyst
+    #query= "tell me about Tangible Book Value and Average Stock Price per Share 2005–2023 of JPM" ## scientist
+
+    #query = "can you give me bird eye view on the topic: Staying Competitive in the Shrinking Public Markets" ## scientist
+
+    query= "can you give me idea about Overhead ratio of JP Morgan compnay?" ## scientist
 
     # Example: Fetch only "analyst" + "financial"
-    answer, docs = standard_rag(query, roles=["analyst", "financial"])
+    answer, docs = standard_rag(query, roles=["scientist", "financial"])
 
     metadata = [
         {"file": d.metadata.get("file_name", "Unknown"),
