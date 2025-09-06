@@ -12,7 +12,7 @@ SESSIONS: Dict[str, Dict[str, Any]] = {}
 @dataclass
 class Config:
     retriever_k: int = 3                # top-k docs for retriever
-    max_context_docs_chars: int = 4000  # trim context length
+    max_context_docs_chars: int = 5000  # trim context length
     summary_every_n_turns: int = 3      # summarize history every N turns
 
 

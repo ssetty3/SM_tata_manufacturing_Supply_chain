@@ -87,69 +87,69 @@ def chitchat_node(state: Dict[str, Any]) -> Dict[str, Any]:
         CACHE_STORE[query] = resp.content
     return state
 
-# def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
-#     retriever = role_filtered_retriever(state["vectorstore"], state["role"], CONFIG.retriever_k)
-#     docs = retriever.invoke(state["query"])
-#     state["docs"] = docs
-#     state["context"] = trim_context([d.page_content for d in docs], CONFIG.max_context_docs_chars)
-#     append_trace(state, "retrieve", {"num_docs": len(docs)})
-#     return state
-
-
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
     retriever = role_filtered_retriever(state["vectorstore"], state["role"], CONFIG.retriever_k)
     docs = retriever.invoke(state["query"])
     state["docs"] = docs
-
-    context_lines = []
-
-    for doc in docs:
-        lines = doc.page_content.splitlines()
-        table_rows = []
-        header_lines = []
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            # Count numbers in the line
-            numbers = [w for w in stripped.split() if w.replace(".", "").replace(",", "").isdigit()]
-            
-            if len(numbers) >= 2:
-                # Numeric row: separate columns by |
-                table_rows.append(" | ".join(stripped.split()))
-            else:
-                # Non-numeric line: treat as header if table_rows empty, else as paragraph
-                if table_rows and header_lines:
-                    context_lines.append("\n".join(header_lines))
-                    header_lines = []
-                header_lines.append(stripped)
-
-        # Append table if exists
-        if table_rows:
-            if header_lines:
-                # Markdown header for table
-                header = table_rows[0]
-                separator = " | ".join(["---"] * len(header.split("|")))
-                context_lines.append(f"| {header} |")
-                context_lines.append(f"| {separator} |")
-                context_lines.extend([f"| {row} |" for row in table_rows[1:]])
-            else:
-                context_lines.extend(table_rows)
-        # Append leftover headers/text
-        context_lines.extend(header_lines)
-
-    # Limit to max context length
-    state["context"] = "\n".join(context_lines)[:CONFIG.max_context_docs_chars]
+    state["context"] = trim_context([d.page_content for d in docs], CONFIG.max_context_docs_chars)
     append_trace(state, "retrieve", {"num_docs": len(docs)})
-
-    # Debug print
-    #print("=== Retrieved Context (processed) ===")
-    #print(state["context"][:500])
-    #print("===================================")
-
     return state
+
+
+# def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
+#     retriever = role_filtered_retriever(state["vectorstore"], state["role"], CONFIG.retriever_k)
+#     docs = retriever.invoke(state["query"])
+#     state["docs"] = docs
+
+#     context_lines = []
+
+#     for doc in docs:
+#         lines = doc.page_content.splitlines()
+#         table_rows = []
+#         header_lines = []
+
+#         for line in lines:
+#             stripped = line.strip()
+#             if not stripped:
+#                 continue
+
+#             # Count numbers in the line
+#             numbers = [w for w in stripped.split() if w.replace(".", "").replace(",", "").isdigit()]
+            
+#             if len(numbers) >= 2:
+#                 # Numeric row: separate columns by |
+#                 table_rows.append(" | ".join(stripped.split()))
+#             else:
+#                 # Non-numeric line: treat as header if table_rows empty, else as paragraph
+#                 if table_rows and header_lines:
+#                     context_lines.append("\n".join(header_lines))
+#                     header_lines = []
+#                 header_lines.append(stripped)
+
+#         # Append table if exists
+#         if table_rows:
+#             if header_lines:
+#                 # Markdown header for table
+#                 header = table_rows[0]
+#                 separator = " | ".join(["---"] * len(header.split("|")))
+#                 context_lines.append(f"| {header} |")
+#                 context_lines.append(f"| {separator} |")
+#                 context_lines.extend([f"| {row} |" for row in table_rows[1:]])
+#             else:
+#                 context_lines.extend(table_rows)
+#         # Append leftover headers/text
+#         context_lines.extend(header_lines)
+
+#     # Limit to max context length
+#     state["context"] = "\n".join(context_lines)[:CONFIG.max_context_docs_chars]
+#     append_trace(state, "retrieve", {"num_docs": len(docs)})
+
+#     # Debug print
+#     #print("=== Retrieved Context (processed) ===")
+#     #print(state["context"][:500])
+#     #print("===================================")
+
+#     return state
 
 
 

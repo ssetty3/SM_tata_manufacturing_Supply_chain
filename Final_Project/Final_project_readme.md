@@ -1,3 +1,5 @@
+
+```
 Final_Project/
 │
 ├── src/
@@ -21,3 +23,12 @@ Final_Project/
 ├── .env
 └── requirements.txt
 └── README.md
+
+```
+
+## To launch ui
+
+```
+python -m streamlit run ui\main_app.py
+
+```
