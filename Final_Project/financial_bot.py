@@ -114,11 +114,11 @@ def run_agent(user_id: str, session_id: str, role: str, query: str):
 
 # --- Example Execution ---
 if __name__ == "__main__":
-    #query= "what is discussed in the Dividends section of the Deutsche Bank Annual Report 2023?"  #-> analyst
+    query= "what is discussed in the Dividends section of the Deutsche Bank Annual Report 2023?"  #-> analyst
     #query= "tell me about Tangible Book Value and Average Stock Price per Share 2005–2023 of JPM"  #> scientist
     #query= "explain JOURNEY TO THE CLOUD of JPM" # scientist
 
-    query = "What is the average stock price from 2005 to 2023?"
+    #query = "What is the average stock price from 2005 to 2023?"
     #query = "Tell me about the financial performance of Microsoft in 2025."
     result = run_agent("user1", "sess1", role="scientist", query=query)
 

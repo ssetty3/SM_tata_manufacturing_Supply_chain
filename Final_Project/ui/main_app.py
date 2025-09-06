@@ -10,7 +10,7 @@ def init_session_state():
         "auth": False,
         "user_id": None,
         "email": "",
-        "role": "",
+        "role": "scientist",
         "history": [],     # short-term memory
         "turns": 0,
         "traces": [],

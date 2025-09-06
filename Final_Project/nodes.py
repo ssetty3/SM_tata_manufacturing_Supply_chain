@@ -12,6 +12,15 @@ from helpers import (
 from langchain.prompts import PromptTemplate
 from langchain_community.utilities import SerpAPIWrapper
 
+import sqlite3
+from datetime import datetime
+from db.memory import DB_PATH  # your sqlite file path
+
+from difflib import SequenceMatcher
+
+
+
+
 # --- Prompts ---
 answer_prompt = PromptTemplate(
     input_variables=["question", "context", "role"],
@@ -56,22 +65,199 @@ Answer only "YES" if context is sufficient, otherwise "NO".
 
 
 # --- Nodes ---
-def cache_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
-    query = state["query"]
+
+# def cache_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
+#     query = state.get("query", "").strip()
+#     role = state.get("role", "")
+#     session = state.get("session", {})
+#     user_id = session.get("user_id", 3)
+#     cache_key = f"{user_id}:{query}"
+
+#     #print(role, user_id)
+#     #print(type(user_id))
+#     #print(type(role))
+
+#     # 1️⃣ Short-term cache
+#     if cache_key in CACHE_STORE:
+#         cached = CACHE_STORE[cache_key]
+
+#        # ✅ Debug print to verify short-term cache usage
+#         print(f"💾 Short-term cache HIT for key: {cache_key}")
+#         print(f"Cached answer: {cached}\n")
+
+
+#         append_trace(state, "cache_check", {
+#             "hit": True,
+#             "cached_answer": cached,
+#             "source": "CACHE_STORE"
+#         })
+#         state["answer"] = cached
+#         return state
+
+#     # 2️⃣ Long-term memory
+#     conn = sqlite3.connect(DB_PATH)
+#     cur = conn.cursor()
+
+#     # Escape double quotes in query to prevent MATCH errors
+#     safe_query = query.replace('"', '""')
+#     safe_query = re.sub(r'[-*+?:]', ' ', query)
+#     fts_query = f'"{safe_query}"'  # wrap in double quotes for exact phrase match
+
+#     sql = f"""
+#     SELECT c.answer, c.query, bm25(conversations_fts) AS score
+#     FROM conversations_fts
+#     JOIN conversations c ON c.id = conversations_fts.rowid
+#     WHERE c.user_id = ? AND c.role = ? AND conversations_fts MATCH {fts_query}
+#     ORDER BY score ASC
+#     LIMIT 5
+#     """
+
+#     try:
+#         # Bind only user_id and role
+#         cur.execute(sql, (user_id, role))
+#         rows = cur.fetchall()
+#     except sqlite3.OperationalError as e:
+#         append_trace(state, "cache_check_error", {"error": str(e)})
+#         rows = []
+
+#     conn.close()
+
+#     print("-------- Long-term cache lookup results --------")
+#     print(rows)
+
+#     # 3️⃣ Best match using SequenceMatcher
+#     best_match = None
+#     best_score = 0.0
+#     for answer, matched_query, _ in rows:
+#         score = SequenceMatcher(None, query, matched_query).ratio()
+#         if score > best_score:
+#             best_score = score
+#             best_match = (answer, matched_query)
+
+#     if best_match and best_score >= 0.75:
+#         answer, matched_query = best_match
+#         state["answer"] = answer
+#         CACHE_STORE[cache_key] = answer
+#         append_trace(state, "cache_check", {
+#             "hit": True,
+#             "cached_answer": answer,
+#             "matched_query": matched_query,
+#             "similarity_score": round(best_score, 2),
+#             "source": "SQLite FTS + JOIN"
+#         })
+#         return state
+
+#     # 4️⃣ No match found
+#     append_trace(state, "cache_check", {"hit": False})
+#     return state
+
+import re
+import sqlite3
+from difflib import SequenceMatcher
+from helpers import append_trace, CACHE_STORE
+from db.memory import DB_PATH
+
+def cache_check_node(state: dict) -> dict:
+    """
+    Cache check node:
+    1️⃣ Check short-term memory (CACHE_STORE)
+    2️⃣ Check long-term memory (SQLite FTS5)
+    Updates state['answer'] if found.
+    """
+    query = state.get("query", "").strip()
+    role = state.get("role", "")
     session = state.get("session", {})
-    user_id = session.get("user_id", "default")
+    user_id = session.get("user_id")  # keep as int for DB
 
-    # Create unique cache key per user + query
-    cache_key = f"{user_id}:{query}"
+    # Normalize cache key for short-term memory
+    cache_key = f"{user_id}:{query.lower()}"
 
+    print(f"🔹 Cache key: {cache_key}")
+    print(f"🔹 Existing CACHE_STORE keys: {list(CACHE_STORE.keys())}")
+    print(f"🔹 state['answer'] exists? {bool(state.get('answer'))}")
+
+    # Early exit if answer already exists
+    if state.get("answer"):
+        print(f"🛑 Answer already exists in state, skipping cache check.")
+        return state
+
+    # 1️⃣ Short-term cache
     if cache_key in CACHE_STORE:
         cached = CACHE_STORE[cache_key]
-        append_trace(state, "cache_check", {"hit": True, "cached_answer": cached})
+        print(f"💾 Short-term cache HIT for key: {cache_key}")
+        print(f"Cached answer: {cached}\n")
+
+        append_trace(state, "cache_check", {
+            "hit": True,
+            "cached_answer": cached,
+            "source": "CACHE_STORE"
+        })
         state["answer"] = cached
         return state
 
+    # 2️⃣ Long-term memory (SQLite FTS5)
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Escape double quotes and special FTS5 characters
+    safe_query = query.replace('"', '""')
+    safe_query = re.sub(r'[-*+?:]', ' ', safe_query)
+    fts_query = f'"{safe_query}"'
+
+    sql = f"""
+    SELECT c.answer, c.query, bm25(conversations_fts) AS score
+    FROM conversations_fts
+    JOIN conversations c ON c.id = conversations_fts.rowid
+    WHERE c.user_id = ? AND c.role = ? AND conversations_fts MATCH {fts_query}
+    ORDER BY score ASC
+    LIMIT 5
+    """
+
+    try:
+        cur.execute(sql, (user_id, role))  # user_id as int, role as str
+        rows = cur.fetchall()
+    except sqlite3.OperationalError as e:
+        append_trace(state, "cache_check_error", {"error": str(e)})
+        print(f"⚠️ FTS query failed: {e}")
+        rows = []
+
+    conn.close()
+
+    print("-------- Long-term cache lookup results --------")
+    print(rows)
+
+    # 3️⃣ Best match using SequenceMatcher
+    best_match = None
+    best_score = 0.0
+    for answer, matched_query, _ in rows:
+        score = SequenceMatcher(None, query.lower(), matched_query.lower()).ratio()
+        if score > best_score:
+            best_score = score
+            best_match = (answer, matched_query)
+
+    if best_match and best_score >= 0.75:
+        answer, matched_query = best_match
+        state["answer"] = answer
+        CACHE_STORE[cache_key] = answer  # store for future short-term cache
+
+        print(f"💾 Stored in short-term cache for key: {cache_key}")
+        print(f"Answer: {answer}\n")
+
+        append_trace(state, "cache_check", {
+            "hit": True,
+            "cached_answer": answer,
+            "matched_query": matched_query,
+            "similarity_score": round(best_score, 2),
+            "source": "SQLite FTS + JOIN"
+        })
+        return state
+
+    # 4️⃣ No match found
     append_trace(state, "cache_check", {"hit": False})
+    print(f"❌ No cache hit found for key: {cache_key}")
     return state
+
+
 
 
 # Detect chit-chat queries (simple regex for demo)

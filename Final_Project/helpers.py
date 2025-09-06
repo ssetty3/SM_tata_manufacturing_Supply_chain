@@ -54,6 +54,7 @@ def append_trace(state: Dict[str, Any], step: str, details: Dict[str, Any]):
     state["trace"].append({"step": step, "details": details})
 
 
+
 from typing import List, Any
 from langchain.schema import Document
 
