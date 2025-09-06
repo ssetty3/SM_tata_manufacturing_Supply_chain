@@ -167,7 +167,9 @@ def cache_check_node(state: dict) -> dict:
     query = state.get("query", "").strip()
     role = state.get("role", "")
     session = state.get("session", {})
-    user_id = session.get("user_id")  # keep as int for DB
+    user_id = session.get("user_id",1)  # keep as int for DB
+    print(f"🔹 User ID: {user_id}, Role: {role}")
+    print(type(user_id), type(role))
 
     # Normalize cache key for short-term memory
     cache_key = f"{user_id}:{query.lower()}"
