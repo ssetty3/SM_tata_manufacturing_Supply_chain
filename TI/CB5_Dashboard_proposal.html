@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CB5 Roller Mill — Predictive Quality Dashboard | Tata Technologies</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  /* ── Reset & base ───────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    background: #E4E8EE;
+    color: #1F2937;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ── Top navigation bar ─────────────────────────────────────────────── */
+  .navbar {
+    background: #1F3864;
+    border-bottom: 3px solid #2E75B6;
+    padding: 0 20px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .nav-left  { display: flex; align-items: center; gap: 14px; }
+  .nav-right { display: flex; align-items: center; gap: 14px; }
+
+  .logo-pill {
+    background: #2E5DA8;
+    color: #DBEAFE;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid #4A7FD4;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  .nav-sep   { color: #4A6A9A; font-size: 14px; }
+  .nav-site  { font-size: 12px; color: #93B4D4; }
+  .nav-mill  { font-size: 13px; color: #FFFFFF; font-weight: 600; }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid;
+  }
+  .status-badge.alarm { background: #3B0000; color: #FCA5A5; border-color: #7F1D1D; }
+  .status-badge.ok    { background: #052E16; color: #86EFAC; border-color: #14532D; }
+  .status-badge .dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .status-badge.alarm .dot { background: #EF4444; animation: pulse 1.2s ease-in-out infinite; }
+  .status-badge.ok    .dot { background: #22C55E; }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: .35; }
+  }
+
+  .shift-pill {
+    font-size: 11px; color: #DBEAFE;
+    background: #1E3A6E; border: 1px solid #3B5EA8;
+    padding: 3px 9px; border-radius: 4px;
+  }
+  .nav-clock {
+    font-family: 'Courier New', monospace;
+    font-size: 12px; color: #7AA0C4;
+    min-width: 56px; text-align: right;
+  }
+  .mode-tag {
+    font-size: 10px; font-weight: 700;
+    background: #1E3A6E; color: #93C5FD;
+    border: 1px solid #3B5EA8;
+    padding: 2px 8px; border-radius: 3px;
+    letter-spacing: .05em;
+  }
+
+  /* ── Page wrapper ───────────────────────────────────────────────────── */
+  .page { padding: 14px 16px; max-width: 1400px; margin: 0 auto; }
+
+  /* ── Sub-header tab strip ───────────────────────────────────────────── */
+  .tab-strip {
+    display: flex; gap: 4px;
+    background: #FFFFFF;
+    border: 1px solid #D1D9E6;
+    border-radius: 8px;
+    padding: 4px;
+    margin-bottom: 12px;
+  }
+  .tab {
+    padding: 6px 18px;
+    font-size: 12px; font-weight: 600;
+    border-radius: 6px;
+    border: none; cursor: pointer;
+    color: #6B7A99; background: transparent;
+    transition: background .15s;
+  }
+  .tab.active { background: #1F3864; color: #FFFFFF; }
+  .tab:hover:not(.active) { background: #F0F4FA; }
+
+  /* ── KPI strip ──────────────────────────────────────────────────────── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .kpi {
+    background: #FFFFFF;
+    border: 1px solid #D1D9E6;
+    border-radius: 10px;
+    padding: 12px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    border-radius: 10px 10px 0 0;
+  }
+  .kpi.alarm::before { background: #DC2626; }
+  .kpi.warn::before  { background: #D97706; }
+  .kpi.ok::before    { background: #16A34A; }
+  .kpi.info::before  { background: #2563EB; }
+
+  .kpi-label {
+    font-size: 10px; font-weight: 700;
+    color: #6B7A99;
+    text-transform: uppercase; letter-spacing: .06em;
+    margin-bottom: 6px;
+  }
+  .kpi-value {
+    font-size: 26px; font-weight: 700;
+    line-height: 1; margin-bottom: 4px;
+  }
+  .kpi-value.alarm { color: #DC2626; }
+  .kpi-value.warn  { color: #D97706; }
+  .kpi-value.ok    { color: #16A34A; }
+  .kpi-value.info  { color: #1F3864; }
+  .kpi-sub { font-size: 10px; color: #9AA5C0; line-height: 1.4; }
+  .kpi-bar { height: 3px; background: #EEF1F7; border-radius: 2px; margin-top: 8px; }
+  .kpi-bar-fill { height: 100%; border-radius: 2px; transition: width .6s ease; }
+
+  /* ── Two-col mid section ────────────────────────────────────────────── */
+  .mid-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  /* ── Panel base ─────────────────────────────────────────────────────── */
+  .panel {
+    background: #FFFFFF;
+    border: 1px solid #D1D9E6;
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .panel-hdr {
+    display: flex; align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #EEF1F7;
+  }
+  .panel-title {
+    font-size: 11px; font-weight: 700;
+    color: #374151;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .badge {
+    font-size: 9px; font-weight: 700;
+    padding: 2px 8px; border-radius: 4px;
+  }
+  .badge.alarm { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .badge.warn  { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .badge.ok    { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+  .badge.info  { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+
+  /* ── Parameter rows ─────────────────────────────────────────────────── */
+  .legend-row {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #6B7280; }
+  .leg-sq { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  .param-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 0;
+    border-bottom: 1px solid #F1F4F9;
+  }
+  .param-row:last-of-type { border-bottom: none; }
+  .param-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .param-name { font-size: 11px; font-weight: 600; color: #374151; width: 116px; flex-shrink: 0; }
+  .param-live { font-size: 11px; font-weight: 700; width: 62px; flex-shrink: 0; text-align: right; }
+  .bar-track {
+    flex: 1; height: 7px;
+    background: #EEF1F7; border-radius: 4px;
+    position: relative; overflow: visible;
+  }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .5s ease; }
+  .nom-tick {
+    position: absolute; top: -4px;
+    width: 2px; height: 15px;
+    background: #2563EB; border-radius: 1px;
+    transform: translateX(-50%);
+  }
+  .delta-chip {
+    font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    width: 66px; text-align: center; flex-shrink: 0;
+  }
+  .chip-up  { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .chip-dn  { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+  .chip-ok  { background: #F3F4F6; color: #6B7280; border: 1px solid #E5E7EB; }
+
+
+
+  /* ── Pareto rows ────────────────────────────────────────────────────── */
+  .pareto-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #F1F4F9;
+  }
+  .pareto-row:last-of-type { border-bottom: none; }
+  .p-name  { font-size: 11px; font-weight: 600; color: #1F2937; width: 148px; flex-shrink: 0; }
+  .p-track { flex: 1; height: 9px; background: #EEF1F7; border-radius: 5px; overflow: hidden; }
+  .p-fill  { height: 100%; border-radius: 5px; transition: width .5s ease; }
+  .p-count { font-size: 11px; font-weight: 700; color: #1F2937; width: 24px; text-align: right; flex-shrink: 0; }
+  .p-cum   { font-size: 10px; color: #9AA5C0; width: 34px; text-align: right; flex-shrink: 0; }
+  .p-zone  {
+    font-size: 9px; font-weight: 700;
+    padding: 2px 5px; border-radius: 3px;
+    width: 24px; text-align: center; flex-shrink: 0;
+  }
+  .pza { background: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+  .pzb { background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; }
+  .pzc { background: #DCFCE7; color: #166534; border: 1px solid #BBF7D0; }
+
+  /* ── Bottom row ─────────────────────────────────────────────────────── */
+  .bottom-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 12px;
+  }
+  .right-col { display: flex; flex-direction: column; gap: 12px; }
+
+  /* ── Trend chart ────────────────────────────────────────────────────── */
+  .trend-wrap { height: 90px; position: relative; }
+  .trend-footer {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: #9AA5C0; margin-top: 4px;
+  }
+
+  /* ── Event log ──────────────────────────────────────────────────────── */
+  .event-row {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 5px 0;
+    border-bottom: 1px solid #F1F4F9;
+    font-size: 11px;
+  }
+  .event-row:last-child { border-bottom: none; }
+  .ev-time { font-family: 'Courier New', monospace; color: #9AA5C0; flex-shrink: 0; width: 56px; padding-top: 1px; }
+  .ev-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .ev-msg  { line-height: 1.5; }
+  .ev-alarm   { color: #DC2626; }
+  .ev-correct { color: #2563EB; }
+  .ev-ok      { color: #6B7280; }
+
+  /* ── Math state ─────────────────────────────────────────────────────── */
+  .math-panel {
+    background: #EEF2FF;
+    border: 1px solid #C7D2FE;
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .math-title {
+    font-size: 10px; font-weight: 700;
+    color: #3730A3; text-transform: uppercase;
+    letter-spacing: .06em; margin-bottom: 8px;
+  }
+  .math-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid #C7D2FE;
+    font-size: 11px;
+  }
+  .math-row:last-child { border-bottom: none; }
+  .math-key { font-family: 'Courier New', monospace; color: #4338CA; }
+  .math-val { font-weight: 700; }
+
+  /* ── Responsive ─────────────────────────────────────────────────────── */
+  @media (max-width: 1024px) {
+    .kpi-row    { grid-template-columns: repeat(3, 1fr); }
+    .mid-row    { grid-template-columns: 1fr; }
+    .bottom-row { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .kpi-row { grid-template-columns: 1fr 1fr; }
+    .nav-right .shift-pill,
+    .nav-right .mode-tag { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Top navigation ───────────────────────────────────────────────────── -->
+<nav class="navbar">
+  <div class="nav-left">
+    <span class="logo-pill">Tata Technologies</span>
+    <span class="nav-sep">/</span>
+    <span class="nav-site">TI Automotive</span>
+    <span class="nav-sep">/</span>
+    <span class="nav-mill">CB5 Roller Mill</span>
+    <div id="statusBadge" class="status-badge alarm">
+      <span class="dot"></span>
+      <span id="statusText">Alarm active</span>
+    </div>
+  </div>
+  <div class="nav-right">
+    <span class="shift-pill">Shift B — Day</span>
+    <span class="mode-tag">Shadow mode — POC</span>
+    <span class="nav-clock" id="clockDisplay">14:22:08</span>
+  </div>
+</nav>
+
+<!-- ── Page ─────────────────────────────────────────────────────────────── -->
+<div class="page">
+
+  <!-- View tabs -->
+  <div class="tab-strip">
+    <button class="tab active">Production</button>
+    <button class="tab">Parameters</button>
+    <button class="tab">Pareto</button>
+    <button class="tab">Trend</button>
+    <button class="tab">Event log</button>
+  </div>
+
+  <!-- KPI strip -->
+  <div class="kpi-row">
+    <div class="kpi alarm">
+      <div class="kpi-label">Scrap prob. ŷ</div>
+      <div class="kpi-value alarm" id="kpiYhat">58.3%</div>
+      <div class="kpi-sub" id="kpiYhatSub">Above 0.35 trigger</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" id="barYhat" style="width:58%;background:#DC2626"></div></div>
+    </div>
+    <div class="kpi warn">
+      <div class="kpi-label">EWMA loss L̃</div>
+      <div class="kpi-value warn" id="kpiLoss">0.874</div>
+      <div class="kpi-sub">α = 0.15 smoothed</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" id="barLoss" style="width:72%;background:#D97706"></div></div>
+    </div>
+    <div class="kpi alarm">
+      <div class="kpi-label">ΔP imbalance</div>
+      <div class="kpi-value alarm" id="kpiDp">14.2 kN</div>
+      <div class="kpi-sub">std(P1, P2, P3) — high</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" id="barDp" style="width:83%;background:#DC2626"></div></div>
+    </div>
+    <div class="kpi warn">
+      <div class="kpi-label">OD deviation Z</div>
+      <div class="kpi-value warn" id="kpiZ">+0.21 mm</div>
+      <div class="kpi-sub">Limit ±0.08 mm</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" id="barZ" style="width:65%;background:#D97706"></div></div>
+    </div>
+    <div class="kpi info">
+      <div class="kpi-label">Parts since alarm</div>
+      <div class="kpi-value info" id="kpiPsa">3</div>
+      <div class="kpi-sub" id="kpiPsaSub">Fault active — monitoring</div>
+      <div class="kpi-bar"><div class="kpi-bar-fill" id="barPsa" style="width:12%;background:#2563EB"></div></div>
+    </div>
+  </div>
+
+  <!-- Mid row: parameters + pareto -->
+  <div class="mid-row">
+
+    <!-- Parameter setpoints panel -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Parameter setpoints — nominal vs live</span>
+        <span class="badge alarm">Correction active</span>
+      </div>
+      <div class="legend-row">
+        <div class="leg"><div class="leg-sq" style="background:#2563EB"></div>Nominal setpoint</div>
+        <div class="leg"><div class="leg-sq" style="background:#7C3AED"></div>Pressure</div>
+        <div class="leg"><div class="leg-sq" style="background:#059669"></div>Motor speed</div>
+        <div class="leg"><div class="leg-sq" style="background:#EA580C"></div>Gear ratio</div>
+      </div>
+
+      <div class="param-row">
+        <div class="param-dot" style="background:#7C3AED"></div>
+        <span class="param-name">P1 — pressure</span>
+        <span class="param-live" id="lv-p1">72.4 kN</span>
+        <div class="bar-track">
+          <div class="bar-fill" id="bf-p1" style="width:57%;background:#7C3AED;opacity:.65"></div>
+          <div class="nom-tick" style="left:51%"></div>
+        </div>
+        <span class="delta-chip chip-up" id="dc-p1">+7.4 kN</span>
+      </div>
+      <div class="param-row">
+        <div class="param-dot" style="background:#DC2626"></div>
+        <span class="param-name">P2 — pressure</span>
+        <span class="param-live" id="lv-p2" style="color:#DC2626">53.1 kN</span>
+        <div class="bar-track">
+          <div class="bar-fill" id="bf-p2" style="width:37%;background:#DC2626;opacity:.55"></div>
+          <div class="nom-tick" style="left:51%"></div>
+        </div>
+        <span class="delta-chip chip-up" id="dc-p2">−11.9 kN</span>
+      </div>
+      <div class="param-row">
+        <div class="param-dot" style="background:#7C3AED"></div>
+        <span class="param-name">P3 — pressure</span>
+        <span class="param-live" id="lv-p3">69.8 kN</span>
+        <div class="bar-track">
+          <div class="bar-fill" id="bf-p3" style="width:55%;background:#7C3AED;opacity:.65"></div>
+          <div class="nom-tick" style="left:51%"></div>
+        </div>
+        <span class="delta-chip chip-up" id="dc-p3">+4.8 kN</span>
+      </div>
+      <div class="param-row">
+        <div class="param-dot" style="background:#059669"></div>
+        <span class="param-name">ω — motor speed</span>
+        <span class="param-live" id="lv-omega">838 RPM</span>
+        <div class="bar-track">
+          <div class="bar-fill" id="bf-omega" style="width:41%;background:#059669;opacity:.65"></div>
+          <div class="nom-tick" style="left:46%"></div>
+        </div>
+        <span class="delta-chip chip-dn" id="dc-omega">−62 RPM</span>
+      </div>
+      <div class="param-row">
+        <div class="param-dot" style="background:#EA580C"></div>
+        <span class="param-name">r — gear ratio</span>
+        <span class="param-live" id="lv-gear">36.2</span>
+        <div class="bar-track">
+          <div class="bar-fill" id="bf-gear" style="width:39%;background:#EA580C;opacity:.65"></div>
+          <div class="nom-tick" style="left:36%"></div>
+        </div>
+        <span class="delta-chip chip-up" id="dc-gear">+1.2</span>
+      </div>
+
+
+    </div>
+
+    <!-- Pareto panel -->
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">Pareto — Shift B accumulator</span>
+        <span class="badge alarm" id="paretoBadge">2 Zone A active</span>
+      </div>
+
+      <div id="paretoList">
+        <div class="pareto-row">
+          <span class="p-name">Pressure imbal. ΔP</span>
+          <div class="p-track"><div class="p-fill" style="width:100%;background:#DC2626"></div></div>
+          <span class="p-count">18</span><span class="p-cum">38%</span>
+          <span class="p-zone pza">A</span>
+        </div>
+        <div class="pareto-row">
+          <span class="p-name">OD oversize</span>
+          <div class="p-track"><div class="p-fill" style="width:72%;background:#DC2626"></div></div>
+          <span class="p-count">13</span><span class="p-cum">65%</span>
+          <span class="p-zone pza">A</span>
+        </div>
+        <div class="pareto-row">
+          <span class="p-name">Seam offset</span>
+          <div class="p-track"><div class="p-fill" style="width:44%;background:#D97706"></div></div>
+          <span class="p-count">8</span><span class="p-cum">82%</span>
+          <span class="p-zone pzb">B</span>
+        </div>
+        <div class="pareto-row">
+          <span class="p-name">EC fail</span>
+          <div class="p-track"><div class="p-fill" style="width:28%;background:#D97706"></div></div>
+          <span class="p-count">5</span><span class="p-cum">92%</span>
+          <span class="p-zone pzb">B</span>
+        </div>
+        <div class="pareto-row">
+          <span class="p-name">Wall thickness thin</span>
+          <div class="p-track"><div class="p-fill" style="width:17%;background:#16A34A"></div></div>
+          <span class="p-count">3</span><span class="p-cum">98%</span>
+          <span class="p-zone pzc">C</span>
+        </div>
+        <div class="pareto-row">
+          <span class="p-name">Ovality</span>
+          <div class="p-track"><div class="p-fill" style="width:6%;background:#16A34A"></div></div>
+          <span class="p-count">1</span><span class="p-cum">100%</span>
+          <span class="p-zone pzc">C</span>
+        </div>
+      </div>
+
+      <div class="legend-row" style="margin-top:12px;padding-top:8px;border-top:1px solid #EEF1F7">
+        <div class="leg"><div class="leg-sq" style="background:#DC2626"></div>Zone A — act now (&lt;80%)</div>
+        <div class="leg"><div class="leg-sq" style="background:#D97706"></div>Zone B — schedule (80–95%)</div>
+        <div class="leg"><div class="leg-sq" style="background:#16A34A"></div>Zone C — monitor (&gt;95%)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom row: trend + event log + math state -->
+  <div class="bottom-row">
+    <div class="panel">
+      <div class="panel-hdr">
+        <span class="panel-title">24 hr rolling trend — ŷ · EWMA loss · ΔP</span>
+        <span class="badge warn">Fault onset 14:21</span>
+      </div>
+      <div class="trend-wrap">
+        <canvas id="trendChart"
+          aria-label="24-hour rolling trend chart showing y-hat scrap probability, EWMA loss and delta-P imbalance with fault spike visible at 14:21">
+        </canvas>
+      </div>
+      <div class="trend-footer">
+        <span>00:00</span><span>04:00</span><span>08:00</span>
+        <span>12:00</span><span>14:22 ▶</span>
+      </div>
+      <div class="legend-row" style="margin-top:8px">
+        <div class="leg">
+          <div style="width:20px;height:2px;background:#DC2626;border-radius:1px"></div>ŷ scrap prob.
+        </div>
+        <div class="leg">
+          <div style="width:20px;height:0;border-top:2px dashed #D97706"></div>EWMA loss
+        </div>
+        <div class="leg">
+          <div style="width:20px;height:2px;background:#2563EB;border-radius:1px"></div>ΔP imbalance
+        </div>
+        <div class="leg">
+          <div style="width:20px;height:0;border-top:1px dashed rgba(220,38,38,.45)"></div>Alarm threshold (35%)
+        </div>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="panel" style="flex:1">
+        <div class="panel-hdr">
+          <span class="panel-title">Event log</span>
+          <span class="badge info" id="partBadge">Part 47</span>
+        </div>
+        <div id="eventLog">
+          <div class="event-row">
+            <span class="ev-time">14:22:08</span>
+            <div class="ev-dot" style="background:#DC2626"></div>
+            <span class="ev-msg ev-alarm">ALARM ŷ=58% — P2 imbal. P1:+7.4 ω:−62</span>
+          </div>
+          <div class="event-row">
+            <span class="ev-time">14:21:50</span>
+            <div class="ev-dot" style="background:#DC2626"></div>
+            <span class="ev-msg ev-alarm">ALARM ŷ=61% — OD oversize Z:+0.21mm</span>
+          </div>
+          <div class="event-row">
+            <span class="ev-time">14:21:32</span>
+            <div class="ev-dot" style="background:#2563EB"></div>
+            <span class="ev-msg ev-correct">Correct ŷ=41% — P2:−6.1 ω:−28</span>
+          </div>
+          <div class="event-row">
+            <span class="ev-time">14:21:14</span>
+            <div class="ev-dot" style="background:#DC2626"></div>
+            <span class="ev-msg ev-alarm">Fault onset — P2 underload + Z drift</span>
+          </div>
+          <div class="event-row">
+            <span class="ev-time">14:20:55</span>
+            <div class="ev-dot" style="background:#16A34A"></div>
+            <span class="ev-msg ev-ok">Part 31 — ŷ=12% — within spec</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="math-panel">
+        <div class="math-title">Mathematical state at snapshot</div>
+        <div class="math-row">
+          <span class="math-key">ŷ = σ(0.334)</span>
+          <span class="math-val" style="color:#DC2626">0.583</span>
+        </div>
+        <div class="math-row">
+          <span class="math-key">L̃ = 0.15·L + 0.85·L̃₁</span>
+          <span class="math-val" style="color:#D97706">0.874</span>
+        </div>
+        <div class="math-row">
+          <span class="math-key">Δθ = −0.8·W·0.583</span>
+          <span class="math-val" style="color:#2563EB">fired</span>
+        </div>
+        <div class="math-row">
+          <span class="math-key">ΔP = std(72.4, 53.1, 69.8)</span>
+          <span class="math-val" style="color:#DC2626">14.2 kN</span>
+        </div>
+        <div class="math-row">
+          <span class="math-key">Yield est. (run)</span>
+          <span class="math-val" style="color:#1F3864">93.6%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.page -->
+
+<script>
+/* ── Live clock ─────────────────────────────────────────────────────────── */
+(function() {
+  function tick() {
+    const now = new Date();
+    document.getElementById('clockDisplay').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' +
+      String(now.getMinutes()).padStart(2,'0') + ':' +
+      String(now.getSeconds()).padStart(2,'0');
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+/* ── Tab switching ──────────────────────────────────────────────────────── */
+document.querySelectorAll('.tab').forEach(function(tab) {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    tab.classList.add('active');
+  });
+});
+
+/* ── Trend chart ────────────────────────────────────────────────────────── */
+(function() {
+  var n = 120, fs = 96;
+
+  function sm(arr, a) {
+    var s = arr[0];
+    return arr.map(function(v) { s = a * v + (1 - a) * s; return +s.toFixed(4); });
+  }
+
+  var base = Array.from({length: n}, function(_, i) {
+    return 0.06 + Math.sin(i / n * 3.14) * 0.04 + 0.018 * Math.sin(i * 0.31);
+  });
+
+  var yRaw = base.map(function(v, i) {
+    if (i < fs) return v;
+    var rise = Math.min(1, (i - fs) / 8);
+    return Math.min(0.95, v + rise * 0.56);
+  });
+
+  var yhat = sm(yRaw, 0.25).map(function(v) { return Math.max(0, Math.min(1, v)); });
+  var ewmaRaw = yhat.map(function(v) { return -Math.log(Math.max(1 - v, 0.01)); });
+  var ewma = sm(ewmaRaw, 0.15);
+  var dpRaw = Array.from({length: n}, function(_, i) {
+    return i < fs ? 2.5 + 1.1 * Math.sin(i * 0.22) : 2.5 + Math.min(14, (i - fs) * 0.7);
+  });
+  var dp = sm(dpRaw, 0.2);
+
+  var me = Math.max.apply(null, ewma) || 1;
+  var md = Math.max.apply(null, dp)   || 1;
+  var ewmaN = ewma.map(function(v) { return +(v / me).toFixed(4); });
+  var dpN   = dp.map(function(v)   { return +(v / md).toFixed(4); });
+  var threshold = Array(n).fill(0.35);
+
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels: Array.from({length: n}, function(_, i) { return i; }),
+      datasets: [
+        { label: 'ŷ', data: yhat,      borderColor: '#DC2626', borderWidth: 1.8, pointRadius: 0, tension: 0.35, fill: false, yAxisID: 'y' },
+        { label: 'L̃', data: ewmaN,     borderColor: '#D97706', borderWidth: 1.5, pointRadius: 0, tension: 0.35, fill: false, borderDash: [4,3], yAxisID: 'y' },
+        { label: 'ΔP',data: dpN,       borderColor: '#2563EB', borderWidth: 1.5, pointRadius: 0, tension: 0.35, fill: false, yAxisID: 'y' },
+        { label: 'T', data: threshold, borderColor: 'rgba(220,38,38,.35)', borderWidth: 1, pointRadius: 0, tension: 0, fill: false, borderDash: [6,4], yAxisID: 'y' }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { display: false },
+        y: { display: false, min: 0, max: 1.15 }
+      }
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
